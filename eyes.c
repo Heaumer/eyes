@@ -1,7 +1,10 @@
+#include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#if 0
 #include <signal.h>
+#endif
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <unistd.h>
@@ -10,18 +13,20 @@
 
 #define SEP '\t'
 
+extern int snprintf(char *str, size_t size, const char *format, ...);
+
 enum {
 	Maxeyes		= 1024,
 	Maxevents	= 32,
 	Maxname		= 255,	/* sometimes MAX_NAME, MAXNAMLEN */
-	Maxaction	= 64
+	Maxaction	= 1024
 };
 
 typedef struct eye eye;
 struct eye {
-	int		wd;					/* inotify watch descriptor */
-	char	name[Maxname];		/* file name */
-	char 	action[Maxaction];	/* associated action */
+	int		wd;						/* inotify watch descriptor */
+	char	name[Maxname];			/* file name */
+	char 	argv[Maxaction];	/* associated action */
 };
 
 static char *efile = "/etc/eyes.conf";
@@ -93,31 +98,46 @@ getmask(char *m)
 	return mask;
 }
 
-void
-doact(char *action, char *fn, char *flags)
-{
-	switch(fork()) {
-	case -1:
-		perror("fork");
-		break;
-	case 0:
-		execlp(action, action, fn, flags, NULL);
-		perror("execlp");
-		break;
-	default:
-		wait(NULL);
-	}
-
-	return;
-}
-
 char *
-skipsep(char *p)
+skipc(char *p, char c)
 {
-	while (*p == SEP)
+	while (*p == c)
 		p++;
 
 	return p;
+}
+
+void
+doact(char *argv, char *fn, char *flags)
+{
+	char argv2[Maxaction];
+	int i, j;
+
+	memset(argv2, '\0', sizeof(argv2));
+
+	/* substitute $$ for $, $@ for fn and $% for flags */
+	for (i = j = 0; argv[i] != '\0' && j < Maxaction;) {
+		if (argv[i] == '$') {
+			if (argv[i+1] == '$') {
+				argv2[j++] = '$';
+				i += 2;
+				continue;
+			} else if (argv[i+1] == '@') {
+				j += snprintf(argv2+j, sizeof(argv2)-1-j, "'%s'", fn);
+				i += 2;
+				continue;
+			} else if (argv[i+1] == '%') {
+				j += snprintf(argv2+j, sizeof(argv2)-1-j, "'%s'", flags);
+				i += 2;
+				continue;
+			}
+		}
+		argv2[j++] = argv[i++];
+		fprintf(stderr, "CURRENT: %s\n", argv2);
+	}
+
+/*	fprintf(stderr, "Executing on %s: '%s'\n", fn, argv2);*/
+	system(argv2);
 }
 
 int
@@ -144,7 +164,8 @@ loadeyes(char *fn, int fd)
 			break;
 		}
 
-		buf[strlen(buf)-1] = '\0';
+		if (buf[strlen(buf)-1] == '\n')
+			buf[strlen(buf)-1] = '\0';
 
 		/* comments */
 		if (buf[0] == '#')
@@ -157,7 +178,7 @@ loadeyes(char *fn, int fd)
 			continue;
 		}
 		*p++ = '\0';
-		p = skipsep(p);
+		p = skipc(p, SEP);
 
 		/* mask or action if no mask  */
 		q = strchr(p, SEP);
@@ -166,19 +187,20 @@ loadeyes(char *fn, int fd)
 			q = p;
 		} else {
 			*q++ = '\0';
-			q = skipsep(q);
+			q = skipc(q, SEP);
 			mask = getmask(p);
 		}
+
+/*		fprintf(stderr, "%s, %d (%s), %s\n", buf, mask, p, q);*/
 
 		wd = inotify_add_watch(fd, buf, mask);
 		if (wd == -1) {
 			perror("inotify_add_watch");
 			return -1;
 		}
-/*		fprintf(stderr, "%s, %d, %s\n", buf, mask, q);*/
 		eyes[neyes].wd = wd;
 		strncpy(eyes[neyes].name, buf, sizeof(eyes[neyes].name)-1);
-		strncpy(eyes[neyes].action, q, sizeof(eyes[neyes].action)-1);
+		strncpy(eyes[neyes].argv, q, sizeof(eyes[neyes].argv)-1);
 		neyes++;
 
 	} while(!feof(f) && neyes < Maxeyes);
@@ -188,26 +210,33 @@ loadeyes(char *fn, int fd)
 	return 0;
 }
 
+#if 0
 void
-reload(int _)
+shandler(int s)
 {
 	int i;
 
-	_=_;
-
-	/* reset */
-	for (i = 0; i < neyes; i++) {
-		inotify_rm_watch(ifd, eyes[i].wd);
-	}
-	neyes = 0;
-
-	/* and reload */
-	if (loadeyes(efile, ifd) < 0) {
-		exit(1);
+	switch (s) {
+	case SIGTERM:
+	case SIGHUP:
+		break;
+	case SIGUSR1:
+/*		fprintf(stderr, "sigusr1\n");*/
+		/* reset */
+		for (i = 0; i < neyes; i++) {
+			inotify_rm_watch(ifd, eyes[i].wd);
+		}
+		neyes = 0;
+	
+		/* and reload */
+		if (loadeyes(efile, ifd) < 0) {
+			exit(1);
+		}
+		eventloop();
+		break;
 	}
 }
-
-void ign(int _) {_=_;}
+#endif
 
 int
 geteye(int wd)
@@ -229,16 +258,45 @@ help(char *argv0)
 	exit(0);
 }
 
-int
-main(int argc, char *argv[])
+void
+eventloop(void)
 {
 	char buf[Maxevents*sizeof(struct inotify_event)];
 	struct inotify_event *ev;
 	char mask[BUFSIZ];
 	ssize_t n;
-	int fg, i;
 	char *p;
+	int i;
 	eye e;
+
+	for (;;) {
+		n = read(ifd, buf, sizeof(buf));
+		if (n <= 0) {
+			break;
+		}
+		for (p = buf; p < buf+n; p += sizeof(struct inotify_event)+ev->len) {
+			ev = (struct inotify_event *)p;
+/*			fprintf(stderr, "wd: %d\n", geteye(ev->wd));*/
+			i = geteye(ev->wd);
+			/* XXX bad event; happens when reloading eyes */
+			if (i == -1)
+				continue;
+			e = eyes[i];
+/*			fprintf(stderr, "mask: %ul, name: %s\n", ev->mask, e.name);*/
+			rlookupmask(ev->mask, mask, sizeof(mask));
+			doact(e.argv, e.name, mask);
+		}
+	}
+
+	for (i = 0; i < neyes; i++)
+		inotify_rm_watch(ifd, eyes[i].wd);
+}
+
+int
+main(int argc, char *argv[])
+{
+	int fg;
+	int i;
 
 	fg = 0;
 
@@ -262,9 +320,11 @@ main(int argc, char *argv[])
 		break;
 	}
 
-	signal(SIGUSR1, reload);
-	signal(SIGHUP, ign);
-	signal(SIGTERM, ign);
+#if 0
+	signal(SIGUSR1, shandler);
+	signal(SIGHUP, shandler);
+	signal(SIGTERM, shandler);
+#endif
 
 	ifd = inotify_init();
 	if (ifd == -1) {
@@ -275,30 +335,7 @@ main(int argc, char *argv[])
 	if (loadeyes(efile, ifd) < 0)
 		return 1;
 
-
-	for (;;) {
-		n = read(ifd, buf, sizeof(buf));
-		if (n <= 0) {
-			break;
-		}
-		for (p = buf; p < buf+n; p += sizeof(struct inotify_event)+ev->len) {
-			ev = (struct inotify_event *)p;
-/*			fprintf(stderr, "%d\n", geteye(ev->wd)); */
-			i = geteye(ev->wd);
-			/* XXX bad event; happens when reloading eyes */
-			if (i == -1)
-				continue;
-			e = eyes[i];
-/*			fprintf(stderr, "%ul\n", ev->mask); */
-			rlookupmask(ev->mask, mask, sizeof(mask));
-/*			fprintf(stderr, "%s(%s, %s)\n", e.action, e.name, mask); */
-			doact(e.action, e.name, mask);
-		}
-	}
-
-	for (i = 0; i < neyes; i++) {
-		inotify_rm_watch(ifd, eyes[i].wd);
-	}
+	eventloop();
 
 	return 0;
 }
