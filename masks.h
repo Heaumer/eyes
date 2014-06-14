@@ -1,0 +1,31 @@
+struct {
+	char		*name;
+	uint32_t	value;
+} masks[] = {
+	{ "moved_to",		IN_MOVED_TO },
+	{ "ignored",		IN_IGNORED },
+	{ "moved_from",		IN_MOVED_FROM },
+	{ "close_nowrite",		IN_CLOSE_NOWRITE },
+	{ "isdir",		IN_ISDIR },
+	{ "delete_self",		IN_DELETE_SELF },
+	{ "delete",		IN_DELETE },
+	{ "move_self",		IN_MOVE_SELF },
+	{ "close_write",		IN_CLOSE_WRITE },
+	{ "attrib",		IN_ATTRIB },
+	{ "default",		IN_MODIFY },
+	{ "create",		IN_CREATE },
+	{ "move",		IN_MOVE },
+	{ "all_events",		IN_ALL_EVENTS },
+	{ "q_overflow",		IN_Q_OVERFLOW },
+	{ "open",		IN_OPEN },
+	{ "access",		IN_ACCESS },
+	{ "close",		IN_CLOSE },
+	{ "excl_unlink",		IN_EXCL_UNLINK },
+	{ "onlydir",		IN_ONLYDIR },
+	{ "unmount",		IN_UNMOUNT },
+	{ "oneshot",		IN_ONESHOT },
+	{ "mask_add",		IN_MASK_ADD },
+	{ "dont_follow",		IN_DONT_FOLLOW },
+	{ "modify",		IN_MODIFY },
+	{ NULL,		0 },
+};
