@@ -1,0 +1,78 @@
+.TH man 8 "14 June 2014" "0.1" "eyes man page"
+.SH NAME
+eyes \- watch a set of files through inotify
+.SH SYNOPSIS
+eyes [-f] [eyes.conf]
+.RS
+.RE
+eyes [-h]
+.SH DESCRIPTION
+eyes is a daemon which allows to set watches upon some files. Those
+are triggered upon file access, modification, etc.
+.SH OPTIONS
+.TP
+.B -f
+launch the program in foreground, default is background.
+.RS
+.RE
+.TP
+.B eyes.conf
+specify configuration file, default is /etc/eyes.conf
+.RS
+.RE
+.TP
+.B -h
+help
+.RS
+.RE
+.SH EYES.CONF
+eyes.conf is a CSV-like file, containing three columns separated
+by one or more tabulations (\t). Columns are filename, mask and action.
+
+Lines starting with a '#' are skipped.
+
+Configuration file is reloaded upon receiving SIGUSR1.
+
+.SS Filename
+Path to the file or directory on which to set a watch.
+
+It's advised to use absolute path.
+.SS Mask
+Mask follows inotify(7) masks naming. The IN_ prefix is dropped, and
+the rest is lowercased. All masks defined in <sys/inotify.h> can be used.
+
+Masks can be or'd with '|'.
+
+For example, 'IN_CREATE|IN_ACCESS' becomes 'create|access'.
+
+Mask may be omitted, in which case, it's set to default (IN_MODIFY).
+.SS Action
+Action is a command line which will be feed to system(3).
+Following substitution occurs (incron-like):
+.TP
+$$
+single $
+.TP
+$@
+filename
+.TP
+$%
+mask which triggers the eye
+.SH SEE ALSO
+inotify(7), incrond(8), incrontab(1), incrontab(5)
+.SH BUGS
+Linux only.
+.RS
+.RE
+Filename can't contains tabulation.
+.RS
+.RE
+Be careful: avoid action triggering themselves.
+.RS
+.RE
+At most Maxeyes=1024 triggers may be set. Increase and
+recompile if you need more. Similar restriction for action length
+(Maxaction=1024).
+.RS
+.RE
+SIGUSR1 handling not working.
