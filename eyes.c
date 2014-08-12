@@ -133,7 +133,6 @@ doact(char *argv, char *fn, char *flags)
 			}
 		}
 		argv2[j++] = argv[i++];
-		fprintf(stderr, "CURRENT: %s\n", argv2);
 	}
 
 /*	fprintf(stderr, "Executing on %s: '%s'\n", fn, argv2);*/
@@ -315,9 +314,9 @@ main(int argc, char *argv[])
 		perror("fork");
 		return 1;
 	case 0:
-		return 0;
-	default:
 		break;
+	default:
+		return 0;
 	}
 
 #if 0
