@@ -1,0 +1,39 @@
+#!/bin/sh
+
+# TODO Check if already launched
+
+eyes_start() {
+	if which eyes >/dev/null; then
+		echo "Starting eyes daemon: " `which eyes` /etc/eyes.conf
+		eyes /etc/eyes.conf
+	else
+		echo "WARNING:  cannot start eyes daemon (no binary found)"
+	fi
+}
+
+eyes_stop() {
+	killall eyes 2>/dev/null
+	sleep 1
+	killall -9 eyes 2>/dev/null
+	sleep 1
+}
+
+eyes_restart() {
+	eyes_stop
+	eyes_start
+}
+
+case "$1" in
+'start')
+	eyes_start
+	;;
+'stop')
+	eyes_stop
+	;;
+'restart')
+	eyes_restart
+	;;
+*)
+	echo "usage $0 start|stop|restart"
+esac
+
